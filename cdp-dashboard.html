@@ -109,7 +109,7 @@ function connect() {
   document.getElementById('connStatus').className = 'status waiting';
   ws = new WebSocket(WS_URL);
   ws.onopen = () => { document.getElementById('connStatus').className = 'status connected'; addLog('Connected', 'new'); };
-  ws.onclose = () => { document.getElementById('connStatus').className = 'status disconnected'; addLog('Reconnecting...', 'warn'); setTimeout(connect, 3000); };
+  ws.onclose = () => { document.getElementById('connStatus').className = 'status disconnected'; logEntries = logEntries.filter(function(e){ return e.msg !== 'Reconnecting...'; }); addLog('Reconnecting...', 'warn'); setTimeout(connect, 3000); };
   ws.onerror = () => { document.getElementById('connStatus').className = 'status disconnected'; };
   ws.onmessage = (e) => { const msg = JSON.parse(e.data); if (msg.type === 'update') handleUpdate(msg); };
 }
