@@ -31,7 +31,17 @@
   tr.noindex td { background: rgba(55, 66, 250, 0.1); }
   tr.redirect td { background: rgba(128, 128, 255, 0.1); }
 
-  .tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; margin: 1px; }
+  .tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; margin: 1px; cursor: pointer; }
+  .tag:hover { opacity: 0.8; }
+  .filter-active { font-size: 12px; color: #ffa502; margin-left: 10px; }
+  .filter-active a { color: #ff4757; text-decoration: none; margin-left: 5px; }
+  .toolbar { margin-bottom: 16px; display: flex; gap: 10px; align-items: center; }
+  .btn { display: inline-block; padding: 4px 12px; border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: bold; letter-spacing: 1px; }
+  .btn-danger { background: #ff475722; color: #ff4757; border: 1px solid #ff475744; }
+  .btn-danger:hover { background: #ff475744; }
+  .btn-info { background: #3742fa22; color: #7c8aff; border: 1px solid #3742fa44; }
+  .btn-info:hover { background: #3742fa44; }
+  .btn-active { background: #3742fa44; outline: 2px solid #7c8aff; }
   .tag-ok { background: #00d4aa22; color: #00d4aa; }
   .tag-warn { background: #ffa50222; color: #ffa502; }
   .tag-bad { background: #ff475722; color: #ff4757; }
@@ -60,8 +70,12 @@
   <span id="chromeCount">0</span> Chrome |
   <span id="doneCount">0</span> done |
   <span id="renderingCount">0</span> rendering |
-  Updated: <span id="lastUpdate">-</span> |
-  <a href="#" onclick="localStorage.clear(); donePages={}; logEntries=[]; render(); document.getElementById('log').innerHTML=''; return false;" style="color:#ff4757; text-decoration:none; font-size:14px; font-weight:bold; letter-spacing:1px;">CLEAR CACHE</a>
+  Updated: <span id="lastUpdate">-</span>
+  <span id="filterIndicator"></span>
+</div>
+<div class="toolbar">
+  <a href="#" onclick="localStorage.clear(); donePages={}; logEntries=[]; render(); document.getElementById('log').innerHTML=''; return false;" class="btn btn-danger">CLEAR CACHE</a>
+  <a href="#" onclick="toggleDebug(); return false;" class="btn btn-info" id="debugBtn">SHOW DEBUG</a>
 </div>
 
 <div id="doneSection" style="display:none">
@@ -96,11 +110,20 @@ const COLS = [
   { key: 'ttfb', label: 'TTFB', cls: 'text-num' },
   { key: 'heap', label: 'Heap', cls: 'text-num' },
   { key: 'flags', label: 'Flags' },
+  { key: 'ngVersion', label: 'Angular', debug: true },
+  { key: 'wordCount', label: 'Words', cls: 'text-num', debug: true },
+  { key: 'scriptCount', label: 'Scripts', cls: 'text-num', debug: true },
+  { key: 'bodyClasses', label: 'Classes', debug: true },
+  { key: 'stabLogFull', label: 'Stability Log', debug: true },
+  { key: 'errFull', label: 'Console Errors', debug: true },
+  { key: 'metaDescFull', label: 'Meta Desc', debug: true },
 ];
 
 let ws;
 let sortCol = 'url';
 let sortDir = 1;
+let activeFilter = null;
+let showDebug = false;
 let donePages = JSON.parse(localStorage.getItem('cdp_done') || '{}');
 let renderingPages = {};
 let logEntries = JSON.parse(localStorage.getItem('cdp_log') || '[]');
@@ -183,19 +206,33 @@ function cellHtml(p, col, isRendering) {
     case 'heap': return p.heapMB ? p.heapMB + 'MB' : '-';
     case 'flags': {
       var f = [];
-      if (isRendering) f.push('<span class="tag tag-rendering">RENDERING</span>');
-      if (p.text === 0) f.push('<span class="tag tag-bad">EMPTY</span>');
-      else if (p.text < 400) f.push('<span class="tag tag-warn">THIN</span>');
-      if (!p.footer) f.push('<span class="tag tag-warn">NO-FTR</span>');
-      if (p.consoleErrors > 0) f.push('<span class="tag tag-bad">ERR</span>');
-      if (p.robotsMeta && p.robotsMeta.toLowerCase().includes('noindex')) f.push('<span class="tag tag-bad">NOINDEX</span>');
-      if (p.isRedirected) f.push('<span class="tag tag-warn">REDIR</span>');
-      if (!p.title) f.push('<span class="tag tag-warn">NO-TITLE</span>');
-      if (!p.h1) f.push('<span class="tag tag-warn">NO-H1</span>');
-      if (!p.metaDesc) f.push('<span class="tag tag-warn">NO-DESC</span>');
-      if (f.length === 0 && !isRendering) f.push('<span class="tag tag-ok">OK</span>');
-      return f.join('');
+      if (isRendering) f.push('RENDERING');
+      if (p.text === 0) f.push('EMPTY');
+      else if (p.text < 400) f.push('THIN');
+      if (!p.footer) f.push('NO-FTR');
+      if (p.consoleErrors > 0) f.push('ERR');
+      if (p.robotsMeta && p.robotsMeta.toLowerCase().includes('noindex')) f.push('NOINDEX');
+      if (p.isRedirected) f.push('REDIR');
+      if (!p.title) f.push('NO-TITLE');
+      if (!p.h1) f.push('NO-H1');
+      if (!p.metaDesc) f.push('NO-DESC');
+      if (f.length === 0 && !isRendering) f.push('OK');
+      return f.map(function(flag) {
+        var cls = 'tag-warn';
+        if (flag === 'OK') cls = 'tag-ok';
+        else if (flag === 'EMPTY' || flag === 'ERR' || flag === 'NOINDEX') cls = 'tag-bad';
+        else if (flag === 'RENDERING') cls = 'tag-rendering';
+        var active = activeFilter === flag ? ' style="outline:2px solid #fff"' : '';
+        return '<span class="tag ' + cls + '"' + active + ' onclick="filterByFlag(\'' + flag + '\')">' + flag + '</span>';
+      }).join('');
     }
+    case 'ngVersion': return (p._debug || {}).ngVersion || '-';
+    case 'wordCount': return (p._debug || {}).wordCount || '-';
+    case 'scriptCount': return (p._debug || {}).scriptCount || '-';
+    case 'bodyClasses': return (p._debug || {}).bodyClasses || '-';
+    case 'stabLogFull': { var s = (p._debug || {}).stabilityLogFull || ''; return s ? '<span title="' + s.replace(/"/g, '&quot;') + '">' + s.substring(0, 30) + '...</span>' : '-'; }
+    case 'errFull': { var e = (p._debug || {}).consoleErrorsFull || ''; return e ? '<span title="' + e.replace(/"/g, '&quot;') + '">' + e.substring(0, 30) + '...</span>' : '-'; }
+    case 'metaDescFull': { var d = (p._debug || {}).metaDescContent || ''; return d ? '<span title="' + d.replace(/"/g, '&quot;') + '">' + d.substring(0, 40) + '...</span>' : '-'; }
     default: return '-';
   }
 }
@@ -211,8 +248,9 @@ function rowClass(p) {
 
 function buildTable(pages, containerId, isRendering) {
   var thClass = isRendering ? ' class="rendering-th"' : '';
+  var visibleCols = COLS.filter(function(c) { return !c.debug || showDebug; });
   var html = '<table><thead><tr>';
-  COLS.forEach(function(c) {
+  visibleCols.forEach(function(c) {
     var sortAttr = isRendering ? '' : ' data-sort="' + c.key + '"';
     html += '<th' + thClass + sortAttr + '>' + c.label + '</th>';
   });
@@ -220,7 +258,7 @@ function buildTable(pages, containerId, isRendering) {
   pages.forEach(function(p) {
     if (p.error) return;
     html += '<tr class="' + rowClass(p) + (isRendering ? ' rendering-row' : '') + '">';
-    COLS.forEach(function(c) {
+    visibleCols.forEach(function(c) {
       html += '<td class="' + (c.cls || '') + '">' + cellHtml(p, c, isRendering) + '</td>';
     });
     html += '</tr>';
@@ -272,6 +310,12 @@ function getSortValue(p, col) {
 function render() {
   var done = Object.values(donePages);
   done.sort(function(a, b) {
+    // Filter match goes to top
+    if (activeFilter) {
+      var aMatch = getFlags(a).indexOf(activeFilter) >= 0 ? 0 : 1;
+      var bMatch = getFlags(b).indexOf(activeFilter) >= 0 ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+    }
     var va = getSortValue(a, sortCol), vb = getSortValue(b, sortCol);
     if (typeof va === 'string') return va.localeCompare(vb) * sortDir;
     return (va - vb) * sortDir;
@@ -303,6 +347,41 @@ function addLog(msg, cls) {
   document.getElementById('log').innerHTML = logEntries.map(function(e) {
     return '<div class="entry ' + e.cls + '">[' + e.time + '] ' + e.msg + '</div>';
   }).join('');
+}
+
+function toggleDebug() {
+  showDebug = !showDebug;
+  var btn = document.getElementById('debugBtn');
+  btn.textContent = showDebug ? 'HIDE DEBUG' : 'SHOW DEBUG';
+  btn.className = showDebug ? 'btn btn-info btn-active' : 'btn btn-info';
+  render();
+}
+
+function getFlags(p) {
+  var f = [];
+  if (p.text === 0) f.push('EMPTY');
+  else if (p.text < 400) f.push('THIN');
+  if (!p.footer) f.push('NO-FTR');
+  if (p.consoleErrors > 0) f.push('ERR');
+  if (p.robotsMeta && p.robotsMeta.toLowerCase().includes('noindex')) f.push('NOINDEX');
+  if (p.isRedirected) f.push('REDIR');
+  if (!p.title) f.push('NO-TITLE');
+  if (!p.h1) f.push('NO-H1');
+  if (!p.metaDesc) f.push('NO-DESC');
+  if (f.length === 0) f.push('OK');
+  return f;
+}
+
+function filterByFlag(flag) {
+  if (activeFilter === flag) {
+    activeFilter = null;
+  } else {
+    activeFilter = flag;
+  }
+  document.getElementById('filterIndicator').innerHTML = activeFilter
+    ? '<span class="filter-active">Filter: ' + activeFilter + ' <a href="#" onclick="filterByFlag(\'' + activeFilter + '\'); return false;">X</a></span>'
+    : '';
+  render();
 }
 
 // Render persisted data on load
