@@ -77,6 +77,8 @@
 <div class="toolbar">
   <a href="#" onclick="localStorage.clear(); donePages={}; logEntries=[]; render(); document.getElementById('log').innerHTML=''; return false;" class="btn btn-danger">CLEAR CACHE</a>
   <a href="#" onclick="toggleDebug(); return false;" class="btn btn-info" id="debugBtn">SHOW DEBUG</a>
+  <a href="#" onclick="exportJson(); return false;" class="btn btn-info">EXPORT JSON</a>
+  <label class="btn btn-info" style="margin:0">IMPORT JSON <input type="file" accept=".json" onchange="importJson(event)" style="display:none"></label>
 </div>
 
 <div id="doneSection" style="display:none">
@@ -417,6 +419,33 @@ function addLog(msg, cls) {
   document.getElementById('log').innerHTML = logEntries.map(function(e) {
     return '<div class="entry ' + e.cls + '">[' + e.time + '] ' + e.msg + '</div>';
   }).join('');
+}
+
+function exportJson() {
+  var data = { done: Object.values(donePages), rendering: Object.values(renderingPages) };
+  var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cdp-dashboard-' + new Date().toISOString().split('T')[0] + '.json';
+  a.click();
+}
+
+function importJson(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var data = JSON.parse(e.target.result);
+    donePages = {};
+    (data.done || data.pages || []).forEach(function(p) { if (p.url) donePages[p.url] = p; });
+    renderingPages = {};
+    (data.rendering || []).forEach(function(p) { if (p.url) renderingPages[p.url] = p; });
+    localStorage.setItem('cdp_done', JSON.stringify(donePages));
+    addLog('Imported ' + Object.keys(donePages).length + ' pages from ' + file.name, 'new');
+    render();
+  };
+  reader.readAsText(file);
+  event.target.value = '';
 }
 
 function toggleDebug() {
