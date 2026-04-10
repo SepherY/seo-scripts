@@ -78,9 +78,7 @@
 <div class="toolbar">
   <a href="#" onclick="localStorage.clear(); donePages={}; logEntries=[]; render(); document.getElementById('log').innerHTML=''; return false;" class="btn btn-danger">CLEAR CACHE</a>
   <a href="#" onclick="toggleDebug(); return false;" class="btn btn-info" id="debugBtn">SHOW DEBUG</a>
-  <a href="#" onclick="exportJson(); return false;" class="btn btn-info">EXPORT JSON</a>
   <label class="btn btn-info" style="margin:0">IMPORT JSON <input type="file" accept=".json" onchange="importJson(event)" style="display:none"></label>
-  <a href="#legendSection" onclick="document.getElementById('legendSection').style.display='block'" class="btn btn-info">LEGEND</a>
 </div>
 
 <div id="doneSection" style="display:none">
@@ -94,35 +92,6 @@
 </div>
 
 
-<div id="legendSection" style="display:none; margin-top:16px; padding:12px; background:#16213e; border-radius:4px; font-size:11px; color:#888; line-height:1.8;">
-  <div style="color:#00d4aa; font-size:13px; font-weight:bold; margin-bottom:8px;">Column Legend</div>
-  <div><strong style="color:#e0e0e0">URL</strong> — Crawled page URL. REDIR badge = Angular client-side redirect detected.</div>
-  <div><strong style="color:#e0e0e0">Title</strong> — <code>document.title</code> after JS rendering. NO-TITLE flag if missing.</div>
-  <div><strong style="color:#e0e0e0">H1</strong> — First &lt;h1&gt; tag text. Badge shows count if multiple H1s. NO-H1 flag if missing.</div>
-  <div><strong style="color:#e0e0e0">Text</strong> — <code>document.body.innerText.length</code>. EMPTY = 0 chars (render failure). THIN = under 400 chars.</div>
-  <div><strong style="color:#e0e0e0">Robots</strong> — <code>&lt;meta name="robots"&gt;</code> content. Flags: index (green), noindex (red), nofollow (orange).</div>
-  <div><strong style="color:#e0e0e0">Canonical</strong> — <code>&lt;link rel="canonical"&gt;</code>. "self" (green) = self-referential. Other URL = non-self (orange).</div>
-  <div><strong style="color:#e0e0e0">Footer</strong> — <code>stb-footer-links</code> element present in DOM. Structural component, NOT the SEO content signal (use API column for that).</div>
-  <div><strong style="color:#e0e0e0">API</strong> — Article API (<code>/api/v2/article/item</code>) detected via Performance API. "yes" = SEO article content loaded. "no" = no article content.</div>
-  <div><strong style="color:#e0e0e0">Iframes</strong> — Iframe domains detected by MutationObserver (Action hook) + DOM scan. Hover for full URLs.</div>
-  <div><strong style="color:#e0e0e0">Links</strong> — Internal / external <code>&lt;a href&gt;</code> count from rendered DOM.</div>
-  <div><strong style="color:#e0e0e0">Imgs</strong> — <code>&lt;img&gt;</code> element count. Does not include CSS background images.</div>
-  <div><strong style="color:#e0e0e0">Gate</strong> — DOM Stability Gate timing. The Action snippet holds SF's rendering pipeline via a Promise until Angular hydrates (innerText &gt; 400 chars + 2 stable readings). Shows resolution time in ms. No gate = snippet didn't execute on this page.</div>
-  <div><strong style="color:#e0e0e0">Err</strong> — Console error count. <code>console.error</code> override captures errors before Angular boots. Hover for first error message.</div>
-  <div><strong style="color:#e0e0e0">Status</strong> — HTTP status code from <code>PerformanceNavigationTiming.responseStatus</code>. JS badge = client-side redirect (pushState or replaceState).</div>
-  <div><strong style="color:#e0e0e0">Res Fail</strong> — Resources that failed to load (<code>responseEnd = 0</code>). Hover for URLs and durations. Could be blocked by CSP, CORS, or network errors.</div>
-  <div><strong style="color:#e0e0e0">Res Slow</strong> — Resources taking &gt;2s to load. Hover for URLs and durations. May indicate CDN issues or large payloads.</div>
-  <div><strong style="color:#e0e0e0">TTFB</strong> — Time to First Byte from navigation timing. High values (&gt;500ms) suggest server-side delays.</div>
-  <div><strong style="color:#e0e0e0">Heap</strong> — JS heap memory usage in MB. High values may indicate memory leaks in Angular or third-party scripts.</div>
-  <div style="margin-top:8px; color:#00d4aa; font-size:12px; font-weight:bold;">Debug Columns (toggle with SHOW DEBUG)</div>
-  <div><strong style="color:#e0e0e0">Angular</strong> — Angular version from <code>ng-version</code> attribute.</div>
-  <div><strong style="color:#e0e0e0">Words</strong> — Word count from <code>innerText.split(/\s+/)</code>. More accurate than char count for content assessment.</div>
-  <div><strong style="color:#e0e0e0">Scripts</strong> — Number of <code>&lt;script&gt;</code> elements. High counts may affect rendering performance.</div>
-  <div><strong style="color:#e0e0e0">Classes</strong> — <code>document.body.className</code>. Useful for identifying page variants (e.g. "mainDomain").</div>
-  <div><strong style="color:#e0e0e0">Stability Log</strong> — Full gate timeline: text length + footer status at each 500ms poll until resolution. Hover for full log.</div>
-  <div><strong style="color:#e0e0e0">Console Errors</strong> — Full pipe-delimited error messages. Hover for complete text.</div>
-  <div><strong style="color:#e0e0e0">Meta Desc</strong> — First 40 chars of meta description content. Hover for full text (up to 160 chars).</div>
-</div>
 
 <div id="log"></div>
 
@@ -454,14 +423,6 @@ function addLog(msg, cls) {
   }).join('');
 }
 
-function exportJson() {
-  var data = { done: Object.values(donePages), rendering: Object.values(renderingPages) };
-  var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'cdp-dashboard-' + new Date().toISOString().split('T')[0] + '.json';
-  a.click();
-}
 
 function importJson(event) {
   var file = event.target.files[0];
@@ -481,17 +442,6 @@ function importJson(event) {
   event.target.value = '';
 }
 
-function toggleLegend() {
-  var el = document.getElementById('legendSection');
-  var btn = document.getElementById('legendBtn');
-  if (el.style.display === 'none') {
-    el.style.display = 'block';
-    btn.className = 'btn btn-info btn-active';
-  } else {
-    el.style.display = 'none';
-    btn.className = 'btn btn-info';
-  }
-}
 
 function toggleDebug() {
   showDebug = !showDebug;
