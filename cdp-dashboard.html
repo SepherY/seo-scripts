@@ -303,8 +303,34 @@ function cellHtml(p, col, isRendering) {
     case 'wordCount': return (p._debug || {}).wordCount || '-';
     case 'scriptCount': return (p._debug || {}).scriptCount || '-';
     case 'bodyClasses': return (p._debug || {}).bodyClasses || '-';
-    case 'stabLogFull': { var s = (p._debug || {}).stabilityLogFull || ''; return s ? '<span title="' + s.replace(/"/g, '&quot;') + '">' + s.substring(0, 30) + '...</span>' : '-'; }
-    case 'errFull': { var e = (p._debug || {}).consoleErrorsFull || ''; return e ? '<span title="' + e.replace(/"/g, '&quot;') + '">' + e.substring(0, 30) + '...</span>' : '-'; }
+    case 'stabLogFull': {
+      var s = (p._debug || {}).stabilityLogFull || '';
+      if (!s) return '-';
+      var entries = s.split(' | ');
+      var last = entries[entries.length - 1] || '';
+      var resolved = last.includes('RESOLVED') ? last.split('RESOLVED: ')[1] || 'yes' : 'pending';
+      var first = entries[0] || '';
+      var firstMs = first.split('ms:')[0] || '-';
+      var lastMs = last.split('ms:')[0] || '-';
+      // Extract first text reading
+      var textMatch = first.match(/text=(\d+)/);
+      var firstText = textMatch ? textMatch[1] : '-';
+      var polls = entries.length;
+      var resolvedCls = resolved === 'stable' || resolved === 'stable-no-footer' ? 'tag-ok' : resolved === 'timeout' ? 'tag-warn' : 'tag-info';
+      return '<span class="tag ' + resolvedCls + '">' + resolved + '</span> ' +
+        '<span style="color:#888">' + polls + ' polls</span> ' +
+        '<span style="color:#888">' + firstMs + '→' + lastMs + 'ms</span> ' +
+        '<span style="color:#888">text=' + firstText + '</span>';
+    }
+    case 'errFull': {
+      var e = (p._debug || {}).consoleErrorsFull || '';
+      if (!e) return '<span class="tag tag-ok">clean</span>';
+      var errs = e.split(' | ');
+      var unique = {};
+      errs.forEach(function(err) { var short = err.substring(0, 60); unique[short] = (unique[short] || 0) + 1; });
+      var items = Object.keys(unique).map(function(k) { return unique[k] > 1 ? k + ' (x' + unique[k] + ')' : k; });
+      return '<span class="tag tag-bad">' + errs.length + '</span> <span title="' + e.replace(/"/g, '&quot;') + '" style="color:#888">' + items[0].substring(0, 40) + (items.length > 1 ? ' +' + (items.length-1) + ' more' : '') + '</span>';
+    }
     case 'metaDescFull': { var d = p.metaDesc || (p._debug || {}).metaDescContent || ''; return d ? '<span title="' + d.replace(/"/g, '&quot;') + '">' + d.substring(0, 35) + '</span>' : '<span class="tag tag-warn">-</span>'; }
     default: return '-';
   }
