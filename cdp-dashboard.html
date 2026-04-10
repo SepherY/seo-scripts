@@ -93,22 +93,6 @@
   <div id="renderingTable" class="table-wrap"></div>
 </div>
 
-<div id="diagnosticsSection" style="display:none">
-  <div class="section-header" style="color:#ff4757; border-color:#ff475744;">Snippet Failures <span class="count" id="diagLabel"></span></div>
-  <table id="diagTable">
-    <thead>
-      <tr>
-        <th>URL</th>
-        <th>Action</th>
-        <th>console.error</th>
-        <th>Iframe Watcher</th>
-        <th>Stability Gate</th>
-        <th>Extraction</th>
-      </tr>
-    </thead>
-    <tbody id="diagBody"></tbody>
-  </table>
-</div>
 
 <div id="legendSection" style="display:none; margin-top:16px; padding:12px; background:#16213e; border-radius:4px; font-size:11px; color:#888; line-height:1.8;">
   <div style="color:#00d4aa; font-size:13px; font-weight:bold; margin-bottom:8px;">Column Legend</div>
@@ -459,32 +443,6 @@ function render() {
     document.getElementById('renderingSection').style.display = 'none';
   }
 
-  // Diagnostics: snippet failures
-  var allPages = done.concat(rendering);
-  var snippetFails = allPages.filter(function(p) {
-    var s = p.snippetStatus;
-    return s && (!s.actionRan || !s.consoleHookSet || !s.iframeWatcherSet || !s.stabilityGateSet);
-  });
-  if (snippetFails.length) {
-    document.getElementById('diagnosticsSection').style.display = 'block';
-    document.getElementById('diagLabel').textContent = '(' + snippetFails.length + ' pages with issues)';
-    var ok = '<span class="tag tag-ok">OK</span>';
-    var fail = '<span class="tag tag-bad">FAIL</span>';
-    document.getElementById('diagBody').innerHTML = snippetFails.map(function(p) {
-      var s = p.snippetStatus || {};
-      var url = (p.url || '').replace('https://', '').substring(0, 60);
-      return '<tr>' +
-        '<td class="url-cell">' + url + '</td>' +
-        '<td>' + (s.actionRan ? ok : fail) + '</td>' +
-        '<td>' + (s.consoleHookSet ? ok : fail) + '</td>' +
-        '<td>' + (s.iframeWatcherSet ? ok : fail) + '</td>' +
-        '<td>' + (s.stabilityGateSet ? ok : fail) + '</td>' +
-        '<td>' + (s.extractionRan ? ok : fail) + '</td>' +
-        '</tr>';
-    }).join('');
-  } else {
-    document.getElementById('diagnosticsSection').style.display = 'none';
-  }
 }
 
 function addLog(msg, cls) {
