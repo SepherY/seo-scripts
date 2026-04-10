@@ -30,6 +30,9 @@
 
         // Console errors captured by Action hook
         consoleErrors: '',
+
+        // Stability gate log from Action hook
+        stabilityLog: '',
     };
 
     // ── SEO Article API (Performance API) ──────────────────────────────
@@ -80,6 +83,16 @@
         }
     } catch (e) {
         results.consoleErrors = 'error: ' + e.message;
+    }
+
+    // ── Stability gate log (from Action hook) ───────────────────────────
+    try {
+        var stabilityLog = window.__stabilityLog;
+        if (Array.isArray(stabilityLog) && stabilityLog.length > 0) {
+            results.stabilityLog = stabilityLog.join(' | ');
+        }
+    } catch (e) {
+        results.stabilityLog = 'error: ' + e.message;
     }
 
     // ── Expose results ─────────────────────────────────────────────────
