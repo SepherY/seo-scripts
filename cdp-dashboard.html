@@ -110,6 +110,9 @@ const COLS = [
   { key: 'errors', label: 'Err' },
   { key: 'ttfb', label: 'TTFB', cls: 'text-num' },
   { key: 'heap', label: 'Heap', cls: 'text-num' },
+  { key: 'status', label: 'Status' },
+  { key: 'resFail', label: 'Res Fail', cls: 'text-num' },
+  { key: 'resSlow', label: 'Res Slow', cls: 'text-num' },
   { key: 'flags', label: 'Flags' },
   { key: 'ngVersion', label: 'Angular', debug: true },
   { key: 'wordCount', label: 'Words', cls: 'text-num', debug: true },
@@ -227,6 +230,25 @@ function cellHtml(p, col, isRendering) {
         return '<span class="tag tag-click ' + cls + '"' + active + ' onclick="filterByFlag(\'' + flag + '\')">' + flag + '</span>';
       }).join('');
     }
+    case 'status': {
+      var s = p.httpStatus;
+      var redir = p.isRedirected ? ' <span class="tag tag-click tag-warn" onclick="filterByFlag(\'REDIR\')">' + (p.redirectType || 'JS') + '</span>' : '';
+      if (!s) return '-' + redir;
+      var cls = s >= 400 ? 'tag-bad' : s >= 300 ? 'tag-warn' : 'tag-ok';
+      return '<span class="tag ' + cls + '">' + s + '</span>' + redir;
+    }
+    case 'resFail': {
+      var n = (p.failedResources || []).length;
+      if (!n) return '-';
+      var details = p.failedResources.map(function(r) { return r.url + ' (' + r.dur + 'ms)'; }).join('\n');
+      return '<span class="tag tag-bad" title="' + details.replace(/"/g, '&quot;') + '">' + n + '</span>';
+    }
+    case 'resSlow': {
+      var n = (p.slowResources || []).length;
+      if (!n) return '-';
+      var details = p.slowResources.map(function(r) { return r.url + ' (' + r.dur + 'ms)'; }).join('\n');
+      return '<span class="tag tag-warn" title="' + details.replace(/"/g, '&quot;') + '">' + n + '</span>';
+    }
     case 'ngVersion': return (p._debug || {}).ngVersion || '-';
     case 'wordCount': return (p._debug || {}).wordCount || '-';
     case 'scriptCount': return (p._debug || {}).scriptCount || '-';
@@ -295,6 +317,9 @@ function getSortValue(p, col) {
     case 'gate': return p.stabResolved ? parseInt(p.stabResolved) : 99999;
     case 'errors': return p.consoleErrors || 0;
     case 'ttfb': return p.timing ? p.timing.ttfb : 99999;
+    case 'status': return p.httpStatus || 0;
+    case 'resFail': return (p.failedResources || []).length;
+    case 'resSlow': return (p.slowResources || []).length;
     case 'heap': return p.heapMB || 0;
     case 'flags': {
       var score = 0;
@@ -369,6 +394,9 @@ function getFlags(p) {
   if (!p.title) f.push('NO-TITLE');
   if (!p.h1) f.push('NO-H1');
   if (!p.metaDesc) f.push('NO-DESC');
+  if ((p.failedResources || []).length > 0) f.push('RES-FAIL');
+  if ((p.slowResources || []).length > 0) f.push('RES-SLOW');
+  if (p.httpStatus && p.httpStatus >= 400) f.push('' + p.httpStatus);
   if (f.length === 0) f.push('OK');
   return f;
 }
