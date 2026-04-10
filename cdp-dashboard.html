@@ -284,7 +284,16 @@ function render() {
   buildTable(rendering, 'renderingTable', true);
 
   document.getElementById('doneSection').style.display = done.length ? 'block' : 'none';
-  document.getElementById('renderingSection').style.display = rendering.length ? 'block' : 'none';
+  if (rendering.length) {
+    document.getElementById('renderingSection').style.display = 'block';
+    document.getElementById('renderingTable').style.display = 'block';
+  } else if (done.length) {
+    document.getElementById('renderingSection').style.display = 'block';
+    document.getElementById('renderingTable').style.display = 'none';
+    document.getElementById('renderingLabel').innerHTML = '<span style="color:#00d4aa">Crawl complete — ' + done.length + ' pages processed</span>';
+  } else {
+    document.getElementById('renderingSection').style.display = 'none';
+  }
 }
 
 function addLog(msg, cls) {
