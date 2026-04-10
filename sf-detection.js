@@ -27,6 +27,9 @@
 
         // Current URL after JS rendering
         currentUrl: '',
+
+        // Console errors captured by Action hook
+        consoleErrors: '',
     };
 
     // ── SEO Article API (Performance API) ──────────────────────────────
@@ -67,6 +70,16 @@
         results.currentUrl = window.location.href;
     } catch (e) {
         results.currentUrl = 'error: ' + e.message;
+    }
+
+    // ── Console errors (from Action hook override) ──────────────────────
+    try {
+        var errors = window.__consoleErrors;
+        if (Array.isArray(errors) && errors.length > 0) {
+            results.consoleErrors = errors.join(' | ');
+        }
+    } catch (e) {
+        results.consoleErrors = 'error: ' + e.message;
     }
 
     // ── Expose results ─────────────────────────────────────────────────
