@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SF CDP Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', Monaco, monospace; background: #1a1a2e; color: #e0e0e0; padding: 16px; font-size: 12px; }
+  h1 { color: #00d4aa; font-size: 18px; margin-bottom: 4px; }
+  .stats { color: #888; font-size: 13px; margin-bottom: 16px; }
+  .stats span { color: #00d4aa; font-weight: bold; }
+  .status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+  .status.connected { background: #00d4aa; }
+  .status.disconnected { background: #ff4757; }
+  .status.waiting { background: #ffa502; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .section-header { color: #00d4aa; font-size: 14px; font-weight: bold; margin: 16px 0 8px 0; padding: 6px 0; border-bottom: 2px solid #16213e; }
+  .section-header.rendering { color: #ffa502; border-color: #ffa50244; }
+  .section-header .count { font-size: 12px; color: #888; font-weight: normal; margin-left: 8px; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  th { background: #16213e; color: #00d4aa; padding: 6px 5px; text-align: left; position: sticky; top: 0; cursor: pointer; white-space: nowrap; z-index: 1; font-size: 11px; }
+  th:hover { background: #1a2a4e; }
+  th.rendering-th { color: #ffa502; }
+  td { padding: 4px 5px; border-bottom: 1px solid #16213e; white-space: nowrap; }
+  tr:hover { background: #16213e; }
+  tr.empty td { background: rgba(255, 71, 87, 0.1); }
+  tr.thin td { background: rgba(255, 165, 2, 0.1); }
+  tr.error td { background: rgba(255, 71, 87, 0.15); }
+  tr.noindex td { background: rgba(55, 66, 250, 0.1); }
+  tr.redirect td { background: rgba(128, 128, 255, 0.1); }
+
+  .tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; margin: 1px; }
+  .tag-ok { background: #00d4aa22; color: #00d4aa; }
+  .tag-warn { background: #ffa50222; color: #ffa502; }
+  .tag-bad { background: #ff475722; color: #ff4757; }
+  .tag-info { background: #3742fa22; color: #7c8aff; }
+  .tag-domain { background: #2d3436; color: #dfe6e9; }
+  .tag-rendering { background: #ffa50222; color: #ffa502; animation: pulse 2s infinite; }
+
+  .text-num { font-variant-numeric: tabular-nums; text-align: right; }
+  .url-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  .title-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; color: #aaa; font-size: 11px; }
+  .h1-cell { max-width: 160px; overflow: hidden; text-overflow: ellipsis; color: #888; font-size: 11px; }
+  .canon-cell { max-width: 100px; overflow: hidden; text-overflow: ellipsis; font-size: 10px; color: #666; }
+  .domains { max-width: 200px; overflow: hidden; }
+
+  #log { margin-top: 16px; padding: 12px; background: #16213e; border-radius: 4px; font-size: 11px; color: #888; max-height: 120px; overflow-y: auto; }
+  #log .entry { margin-bottom: 2px; }
+  #log .new { color: #00d4aa; }
+  #log .done { color: #7c8aff; }
+  #log .warn { color: #ffa502; }
+</style>
+</head>
+<body>
+
+<h1><span class="status" id="connStatus"></span>SF CDP Dashboard</h1>
+<div class="stats">
+  <span id="chromeCount">0</span> Chrome |
+  <span id="doneCount">0</span> done |
+  <span id="renderingCount">0</span> rendering |
+  Updated: <span id="lastUpdate">-</span> |
+  <a href="#" onclick="localStorage.clear(); donePages={}; logEntries=[]; render(); document.getElementById('log').innerHTML=''; return false;" style="color:#ff4757; text-decoration:none; font-size:14px; font-weight:bold; letter-spacing:1px;">CLEAR CACHE</a>
+</div>
+
+<div id="doneSection" style="display:none">
+  <div class="section-header">Completed <span class="count" id="doneLabel"></span></div>
+  <div id="doneTable"></div>
+</div>
+
+<div id="renderingSection" style="display:none">
+  <div class="section-header rendering">Rendering <span class="count" id="renderingLabel"></span></div>
+  <div id="renderingTable"></div>
+</div>
+
+<div id="log"></div>
+
+<script>
+const WS_URL = 'ws://localhost:8765';
+const COLS = [
+  { key: 'url', label: 'URL', cls: 'url-cell' },
+  { key: 'title', label: 'Title', cls: 'title-cell' },
+  { key: 'h1', label: 'H1', cls: 'h1-cell' },
+  { key: 'text', label: 'Text', cls: 'text-num' },
+  { key: 'robots', label: 'Robots' },
+  { key: 'canonical', label: 'Canon.', cls: 'canon-cell' },
+  { key: 'footer', label: 'Footer' },
+  { key: 'api', label: 'API' },
+  { key: 'iframes', label: 'Iframes', cls: 'domains' },
+  { key: 'links', label: 'Links', cls: 'text-num' },
+  { key: 'images', label: 'Imgs', cls: 'text-num' },
+  { key: 'gate', label: 'Gate' },
+  { key: 'errors', label: 'Err' },
+  { key: 'ttfb', label: 'TTFB', cls: 'text-num' },
+  { key: 'heap', label: 'Heap', cls: 'text-num' },
+  { key: 'flags', label: 'Flags' },
+];
+
+let ws;
+let sortCol = 'url';
+let sortDir = 1;
+let donePages = JSON.parse(localStorage.getItem('cdp_done') || '{}');
+let renderingPages = {};
+let logEntries = JSON.parse(localStorage.getItem('cdp_log') || '[]');
+
+function connect() {
+  document.getElementById('connStatus').className = 'status waiting';
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => { document.getElementById('connStatus').className = 'status connected'; addLog('Connected', 'new'); };
+  ws.onclose = () => { document.getElementById('connStatus').className = 'status disconnected'; addLog('Reconnecting...', 'warn'); setTimeout(connect, 3000); };
+  ws.onerror = () => { document.getElementById('connStatus').className = 'status disconnected'; };
+  ws.onmessage = (e) => { const msg = JSON.parse(e.data); if (msg.type === 'update') handleUpdate(msg); };
+}
+
+function handleUpdate(msg) {
+  const prevDone = new Set(Object.keys(donePages));
+  (msg.done || []).forEach(p => {
+    if (!prevDone.has(p.url)) {
+      const short = p.url.replace('https://', '').substring(0, 60);
+      addLog('DONE: ' + short + ' text=' + p.text + ' h1=' + (p.h1 ? 'Y' : 'N'), 'done');
+    }
+    donePages[p.url] = p;
+  });
+
+  const prevR = new Set(Object.keys(renderingPages));
+  renderingPages = {};
+  (msg.rendering || []).forEach(p => {
+    renderingPages[p.url] = p;
+    if (!prevR.has(p.url) && !prevDone.has(p.url)) addLog('NEW: ' + p.url.replace('https://', '').substring(0, 60), 'new');
+  });
+
+  document.getElementById('chromeCount').textContent = msg.stats.chrome_instances;
+  document.getElementById('doneCount').textContent = msg.stats.done_count;
+  document.getElementById('renderingCount').textContent = msg.stats.rendering_count;
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+  document.getElementById('doneLabel').textContent = '(' + Object.keys(donePages).length + ' pages)';
+  document.getElementById('renderingLabel').textContent = '(' + msg.stats.rendering_count + ' in Chrome)';
+
+  localStorage.setItem('cdp_done', JSON.stringify(donePages));
+  render();
+}
+
+function cellHtml(p, col, isRendering) {
+  switch(col.key) {
+    case 'url': {
+      const u = (p.url || '').replace('https://', '').substring(0, 50);
+      const redir = p.isRedirected;
+      return '<span title="' + (p.url||'') + (redir ? '\nOriginal: ' + p.originalUrl : '') + '">' + u + (redir ? ' <span class="tag tag-warn">REDIR</span>' : '') + '</span>';
+    }
+    case 'title': return '<span title="' + (p.title||'') + '">' + (p.title ? p.title.substring(0, 35) : '<span class="tag tag-warn">-</span>') + '</span>';
+    case 'h1': {
+      const badge = p.h1Count > 1 ? ' <span class="tag tag-warn">' + p.h1Count + '</span>' : '';
+      return (p.h1 ? '<span title="' + p.h1 + '">' + p.h1.substring(0, 30) + '</span>' : '<span class="tag tag-warn">-</span>') + badge;
+    }
+    case 'text': return '' + (p.text || 0);
+    case 'robots': {
+      if (!p.robotsMeta) return '<span class="tag tag-info">-</span>';
+      const r = p.robotsMeta.toLowerCase();
+      if (r.includes('noindex')) return '<span class="tag tag-bad">noindex</span>';
+      if (r.includes('nofollow')) return '<span class="tag tag-warn">nofollow</span>';
+      return '<span class="tag tag-ok">index</span>';
+    }
+    case 'canonical': {
+      if (!p.canonical) return '<span class="tag tag-warn">-</span>';
+      const self = p.canonical === p.url || p.canonical === p.currentUrl;
+      const short = p.canonical.replace('https://', '').substring(0, 25);
+      return self ? '<span class="tag tag-ok" title="' + p.canonical + '">self</span>' : '<span class="tag tag-warn" title="' + p.canonical + '">' + short + '</span>';
+    }
+    case 'footer': return p.footer ? '<span class="tag tag-ok">Y</span>' : '<span class="tag tag-warn">N</span>';
+    case 'api': return p.articleApi ? '<span class="tag tag-ok">yes(' + p.articleCount + ')</span>' : '<span class="tag tag-info">no</span>';
+    case 'iframes': return (p.iframeDomains || []).map(function(d) { return '<span class="tag tag-domain">' + d + '</span>'; }).join('') || '-';
+    case 'links': return (p.internalLinks || 0) + '/<span style="color:#666">' + (p.externalLinks || 0) + '</span>';
+    case 'images': return '' + (p.imgCount || 0);
+    case 'gate': {
+      if (p.stabResolved) { var ms = p.stabResolved.split('ms')[0].trim(); return '<span class="tag tag-ok">' + ms + 'ms</span>'; }
+      if (p.stabEntries > 0) return '<span class="tag tag-warn">polling(' + p.stabEntries + ')</span>';
+      return '-';
+    }
+    case 'errors': return p.consoleErrors > 0 ? '<span class="tag tag-bad" title="' + (p.errorSample||'') + '">' + p.consoleErrors + '</span>' : '-';
+    case 'ttfb': return p.timing ? p.timing.ttfb + 'ms' : '-';
+    case 'heap': return p.heapMB ? p.heapMB + 'MB' : '-';
+    case 'flags': {
+      var f = [];
+      if (isRendering) f.push('<span class="tag tag-rendering">RENDERING</span>');
+      if (p.text === 0) f.push('<span class="tag tag-bad">EMPTY</span>');
+      else if (p.text < 400) f.push('<span class="tag tag-warn">THIN</span>');
+      if (!p.footer) f.push('<span class="tag tag-warn">NO-FTR</span>');
+      if (p.consoleErrors > 0) f.push('<span class="tag tag-bad">ERR</span>');
+      if (p.robotsMeta && p.robotsMeta.toLowerCase().includes('noindex')) f.push('<span class="tag tag-bad">NOINDEX</span>');
+      if (p.isRedirected) f.push('<span class="tag tag-warn">REDIR</span>');
+      if (!p.title) f.push('<span class="tag tag-warn">NO-TITLE</span>');
+      if (!p.h1) f.push('<span class="tag tag-warn">NO-H1</span>');
+      if (!p.metaDesc) f.push('<span class="tag tag-warn">NO-DESC</span>');
+      if (f.length === 0 && !isRendering) f.push('<span class="tag tag-ok">OK</span>');
+      return f.join('');
+    }
+    default: return '-';
+  }
+}
+
+function rowClass(p) {
+  if (p.text === 0) return 'empty';
+  if (p.text < 400) return 'thin';
+  if (p.robotsMeta && p.robotsMeta.toLowerCase().includes('noindex')) return 'noindex';
+  if (p.isRedirected) return 'redirect';
+  if (p.consoleErrors > 0) return 'error';
+  return '';
+}
+
+function buildTable(pages, containerId, isRendering) {
+  var thClass = isRendering ? ' class="rendering-th"' : '';
+  var html = '<table><thead><tr>';
+  COLS.forEach(function(c) {
+    var sortAttr = isRendering ? '' : ' data-sort="' + c.key + '"';
+    html += '<th' + thClass + sortAttr + '>' + c.label + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+  pages.forEach(function(p) {
+    if (p.error) return;
+    html += '<tr class="' + rowClass(p) + (isRendering ? ' rendering-row' : '') + '">';
+    COLS.forEach(function(c) {
+      html += '<td class="' + (c.cls || '') + '">' + cellHtml(p, c, isRendering) + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById(containerId).innerHTML = html;
+
+  if (!isRendering) {
+    document.querySelectorAll('#' + containerId + ' th[data-sort]').forEach(function(th) {
+      th.addEventListener('click', function() {
+        var col = th.dataset.sort;
+        if (sortCol === col) sortDir *= -1;
+        else { sortCol = col; sortDir = 1; }
+        render();
+      });
+    });
+  }
+}
+
+function getSortValue(p, col) {
+  switch(col) {
+    case 'url': return p.url || '';
+    case 'title': return p.title || '';
+    case 'h1': return p.h1 || '';
+    case 'text': return p.text || 0;
+    case 'robots': return p.robotsMeta || '';
+    case 'canonical': return p.canonical === p.url ? 0 : 1;
+    case 'footer': return p.footer ? 1 : 0;
+    case 'api': return p.articleApi ? 1 : 0;
+    case 'iframes': return (p.iframeDomains || []).length;
+    case 'links': return (p.internalLinks || 0);
+    case 'images': return p.imgCount || 0;
+    case 'gate': return p.stabResolved ? parseInt(p.stabResolved) : 99999;
+    case 'errors': return p.consoleErrors || 0;
+    case 'ttfb': return p.timing ? p.timing.ttfb : 99999;
+    case 'heap': return p.heapMB || 0;
+    case 'flags': {
+      var score = 0;
+      if (p.text === 0) score += 100;
+      if (!p.h1) score += 10;
+      if (!p.title) score += 10;
+      if (p.consoleErrors > 0) score += 5;
+      return score;
+    }
+    default: return 0;
+  }
+}
+
+function render() {
+  var done = Object.values(donePages);
+  done.sort(function(a, b) {
+    var va = getSortValue(a, sortCol), vb = getSortValue(b, sortCol);
+    if (typeof va === 'string') return va.localeCompare(vb) * sortDir;
+    return (va - vb) * sortDir;
+  });
+
+  var rendering = Object.values(renderingPages);
+  rendering.sort(function(a, b) { return (a.text || 0) - (b.text || 0); });
+
+  buildTable(done, 'doneTable', false);
+  buildTable(rendering, 'renderingTable', true);
+
+  document.getElementById('doneSection').style.display = done.length ? 'block' : 'none';
+  document.getElementById('renderingSection').style.display = rendering.length ? 'block' : 'none';
+}
+
+function addLog(msg, cls) {
+  logEntries.unshift({ msg: msg, cls: cls, time: new Date().toLocaleTimeString() });
+  if (logEntries.length > 50) logEntries.pop();
+  localStorage.setItem('cdp_log', JSON.stringify(logEntries));
+  document.getElementById('log').innerHTML = logEntries.map(function(e) {
+    return '<div class="entry ' + e.cls + '">[' + e.time + '] ' + e.msg + '</div>';
+  }).join('');
+}
+
+// Render persisted data on load
+render();
+if (logEntries.length) {
+  document.getElementById('log').innerHTML = logEntries.map(function(e) {
+    return '<div class="entry ' + e.cls + '">[' + e.time + '] ' + e.msg + '</div>';
+  }).join('');
+}
+document.getElementById('doneCount').textContent = Object.keys(donePages).length;
+document.getElementById('doneLabel').textContent = '(' + Object.keys(donePages).length + ' pages)';
+
+connect();
+</script>
+</body>
+</html>
