@@ -179,6 +179,7 @@ let sortCol = 'url';
 let sortDir = 1;
 let activeFilter = null;
 let showDebug = false;
+let hasConnectedOnce = false;
 let donePages = JSON.parse(localStorage.getItem('cdp_done') || '{}');
 let renderingPages = {};
 let logEntries = JSON.parse(localStorage.getItem('cdp_log') || '[]');
@@ -186,7 +187,16 @@ let logEntries = JSON.parse(localStorage.getItem('cdp_log') || '[]');
 function connect() {
   document.getElementById('connStatus').className = 'status waiting';
   ws = new WebSocket(WS_URL);
-  ws.onopen = () => { document.getElementById('connStatus').className = 'status connected'; donePages = {}; renderingPages = {}; localStorage.removeItem('cdp_done'); render(); addLog('Connected — new session', 'new'); };
+  ws.onopen = () => {
+    document.getElementById('connStatus').className = 'status connected';
+    if (!hasConnectedOnce) {
+      hasConnectedOnce = true;
+      donePages = {}; renderingPages = {}; localStorage.removeItem('cdp_done'); render();
+      addLog('Connected — new session', 'new');
+    } else {
+      addLog('Reconnected', 'new');
+    }
+  };
   ws.onclose = () => { document.getElementById('connStatus').className = 'status disconnected'; logEntries = logEntries.filter(function(e){ return e.msg !== 'Reconnecting...'; }); addLog('Reconnecting...', 'warn'); setTimeout(connect, 3000); };
   ws.onerror = () => { document.getElementById('connStatus').className = 'status disconnected'; };
   ws.onmessage = (e) => { const msg = JSON.parse(e.data); if (msg.type === 'update') handleUpdate(msg); };
