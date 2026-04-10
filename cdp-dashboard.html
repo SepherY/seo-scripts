@@ -144,7 +144,7 @@
 
 <script>
 const params = new URLSearchParams(window.location.search);
-const WS_URL = params.get('ws') || 'ws://localhost:8765';
+const SSE_URL = params.get('sse') || (window.location.origin + '/events');
 const COLS = [
   { key: 'url', label: 'URL', cls: 'url-cell' },
   { key: 'title', label: 'Title', cls: 'title-cell' },
@@ -186,8 +186,8 @@ let logEntries = JSON.parse(localStorage.getItem('cdp_log') || '[]');
 
 function connect() {
   document.getElementById('connStatus').className = 'status waiting';
-  ws = new WebSocket(WS_URL);
-  ws.onopen = () => {
+  var evtSource = new EventSource(SSE_URL);
+  evtSource.onopen = function() {
     document.getElementById('connStatus').className = 'status connected';
     if (!hasConnectedOnce) {
       hasConnectedOnce = true;
@@ -197,9 +197,16 @@ function connect() {
       addLog('Reconnected', 'new');
     }
   };
-  ws.onclose = () => { document.getElementById('connStatus').className = 'status disconnected'; logEntries = logEntries.filter(function(e){ return e.msg !== 'Reconnecting...'; }); addLog('Reconnecting...', 'warn'); setTimeout(connect, 3000); };
-  ws.onerror = () => { document.getElementById('connStatus').className = 'status disconnected'; };
-  ws.onmessage = (e) => { const msg = JSON.parse(e.data); if (msg.type === 'update') handleUpdate(msg); };
+  evtSource.onerror = function() {
+    document.getElementById('connStatus').className = 'status disconnected';
+    logEntries = logEntries.filter(function(e){ return e.msg !== 'Reconnecting...'; });
+    addLog('Reconnecting...', 'warn');
+    // EventSource auto-reconnects, no manual retry needed
+  };
+  evtSource.onmessage = function(e) {
+    var msg = JSON.parse(e.data);
+    if (msg.type === 'update') handleUpdate(msg);
+  };
 }
 
 function handleUpdate(msg) {
