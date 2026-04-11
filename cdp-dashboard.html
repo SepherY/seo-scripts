@@ -21,7 +21,9 @@
 
   table { width: 100%; border-collapse: collapse; margin-bottom: 8px; min-width: max-content; }
   .table-wrap { overflow-x: auto; margin-bottom: 8px; }
-  th { background: #16213e; color: #00d4aa; padding: 6px 5px; text-align: left; position: sticky; top: 0; cursor: pointer; white-space: nowrap; z-index: 1; font-size: 11px; }
+  th { background: #16213e; color: #00d4aa; padding: 6px 5px; text-align: left; position: sticky; top: 0; cursor: pointer; white-space: nowrap; z-index: 1; font-size: 11px; position: relative; }
+  th .col-resize { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; opacity: 0; transition: opacity 0.15s; }
+  th:hover .col-resize { opacity: 1; background: #00d4aa44; }
   th:hover { background: #1a2a4e; }
   th.rendering-th { color: #ffa502; }
   td { padding: 4px 5px; border-bottom: 1px solid #16213e; white-space: nowrap; }
@@ -58,6 +60,13 @@
   .canon-cell { max-width: 100px; overflow: hidden; text-overflow: ellipsis; font-size: 10px; color: #666; }
   .domains { max-width: 200px; overflow: hidden; }
 
+  .brand-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .brand-tab { padding: 5px 14px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; border: 1px solid #16213e; background: #16213e; color: #888; transition: all 0.15s; }
+  .brand-tab:hover { background: #1a2a4e; color: #e0e0e0; }
+  .brand-tab.active { background: #00d4aa22; color: #00d4aa; border-color: #00d4aa44; }
+  .brand-tab .tab-count { font-weight: normal; color: #666; margin-left: 4px; font-size: 11px; }
+  .brand-tab.active .tab-count { color: #00d4aa88; }
+
   #log { margin-top: 16px; padding: 12px; background: #16213e; border-radius: 4px; font-size: 11px; color: #888; max-height: 120px; overflow-y: auto; }
   #log .entry { margin-bottom: 2px; }
   #log .new { color: #00d4aa; }
@@ -80,6 +89,8 @@
   <a href="#" onclick="toggleDebug(); return false;" class="btn btn-info" id="debugBtn">SHOW DEBUG</a>
   <label class="btn btn-info" style="margin:0">IMPORT JSON <input type="file" accept=".json" onchange="importJson(event)" style="display:none"></label>
 </div>
+
+<div id="brandTabs" class="brand-tabs" style="display:none"></div>
 
 <div id="doneSection" style="display:none">
   <div class="section-header">Completed <span class="count" id="doneLabel"></span></div>
@@ -116,6 +127,7 @@ const COLS = [
   { key: 'heap', label: 'Heap', cls: 'text-num' },
   { key: 'status', label: 'Status' },
   { key: 'metaDescFull', label: 'Description', cls: 'title-cell' },
+  { key: 'alerts', label: 'Alerts', title: 'Based on meta, content, status, and canonical checks. Does not cover robots.txt, HTTP headers, or cross-page checks.' },
   { key: 'flags', label: 'Flags' },
   { key: 'resFail', label: 'Res Fail', cls: 'text-num', debug: true },
   { key: 'resSlow', label: 'Res Slow', cls: 'text-num', debug: true },
@@ -131,7 +143,42 @@ let ws;
 let sortCol = 'url';
 let sortDir = 1;
 let activeFilter = null;
+let activeBrand = null;
 let showDebug = false;
+
+function getBrand(p) {
+  try { var h = new URL(p.url || '').hostname.replace('www.', ''); return h.split('.').slice(-2).join('.'); } catch(e) { return 'unknown'; }
+}
+
+function filterByBrand(pages) {
+  if (!activeBrand) return pages;
+  return pages.filter(function(p) { return getBrand(p) === activeBrand; });
+}
+
+function buildBrandTabs(allDone, allRendering) {
+  var counts = {};
+  allDone.concat(allRendering).forEach(function(p) {
+    var b = getBrand(p);
+    counts[b] = (counts[b] || 0) + 1;
+  });
+  var brands = Object.keys(counts).sort();
+  var container = document.getElementById('brandTabs');
+  if (brands.length <= 1) { container.style.display = 'none'; return; }
+  container.style.display = 'flex';
+  var total = allDone.length + allRendering.length;
+  var html = '<span class="brand-tab' + (!activeBrand ? ' active' : '') + '" onclick="setBrand(null)">All<span class="tab-count">(' + total + ')</span></span>';
+  brands.forEach(function(b) {
+    var label = b.split('.')[0];
+    label = label.charAt(0).toUpperCase() + label.slice(1);
+    html += '<span class="brand-tab' + (activeBrand === b ? ' active' : '') + '" onclick="setBrand(\'' + b + '\')">' + label + '<span class="tab-count">(' + counts[b] + ')</span></span>';
+  });
+  container.innerHTML = html;
+}
+
+function setBrand(brand) {
+  activeBrand = brand;
+  render();
+}
 let hasConnectedOnce = false;
 let donePages = JSON.parse(localStorage.getItem('cdp_done') || '{}');
 let renderingPages = {};
@@ -229,6 +276,18 @@ function cellHtml(p, col, isRendering) {
     case 'errors': return p.consoleErrors > 0 ? '<span class="tag tag-bad" title="' + (p.errorSample||'') + '">' + p.consoleErrors + '</span>' : '-';
     case 'ttfb': return p.timing ? p.timing.ttfb + 'ms' : '-';
     case 'heap': return p.heapMB ? p.heapMB + 'MB' : '-';
+    case 'alerts': {
+      var a = p.alerts;
+      if (!a) return '<span class="tag tag-info">-</span>';
+      var active = a.active || [];
+      var suppressed = a.suppressed || [];
+      if (active.length === 0 && suppressed.length === 0) return '<span class="tag tag-info">-</span>';
+      if (active.length === 0 && suppressed.length > 0) return '<span class="tag tag-ok" title="' + suppressed.join(', ') + '">all suppressed</span>';
+      var parts = [];
+      parts.push('<span class="tag tag-bad" title="' + active.join(', ') + '">' + active.length + ' alert' + (active.length > 1 ? 's' : '') + '</span>');
+      if (suppressed.length > 0) parts.push('<span class="tag tag-ok" title="' + suppressed.join(', ') + '">' + suppressed.length + ' suppressed</span>');
+      return parts.join(' ');
+    }
     case 'flags': {
       var f = [];
       if (isRendering) f.push('RENDERING');
@@ -322,7 +381,8 @@ function buildTable(pages, containerId, isRendering) {
   var html = '<table><thead><tr>';
   visibleCols.forEach(function(c) {
     var sortAttr = isRendering ? '' : ' data-sort="' + c.key + '"';
-    html += '<th' + thClass + sortAttr + '>' + c.label + '</th>';
+    var titleAttr = c.title ? ' title="' + c.title + '"' : '';
+    html += '<th' + thClass + sortAttr + titleAttr + '>' + c.label + '<span class="col-resize"></span></th>';
   });
   html += '</tr></thead><tbody>';
   pages.forEach(function(p) {
@@ -338,7 +398,8 @@ function buildTable(pages, containerId, isRendering) {
 
   if (!isRendering) {
     document.querySelectorAll('#' + containerId + ' th[data-sort]').forEach(function(th) {
-      th.addEventListener('click', function() {
+      th.addEventListener('click', function(e) {
+        if (e.target.classList.contains('col-resize')) return;
         var col = th.dataset.sort;
         if (sortCol === col) sortDir *= -1;
         else { sortCol = col; sortDir = 1; }
@@ -346,6 +407,22 @@ function buildTable(pages, containerId, isRendering) {
       });
     });
   }
+
+  // Column resize drag handlers
+  document.querySelectorAll('#' + containerId + ' .col-resize').forEach(function(handle) {
+    handle.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var th = handle.parentElement;
+      var startX = e.pageX;
+      var startW = th.offsetWidth;
+      th.style.width = startW + 'px';
+      function onMove(e) { th.style.width = Math.max(30, startW + e.pageX - startX) + 'px'; }
+      function onUp() { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
 }
 
 function getSortValue(p, col) {
@@ -368,6 +445,11 @@ function getSortValue(p, col) {
     case 'resFail': return (p.failedResources || []).length;
     case 'resSlow': return (p.slowResources || []).length;
     case 'heap': return p.heapMB || 0;
+    case 'alerts': {
+      var al = p.alerts;
+      if (!al) return 0;
+      return (al.active || []).length * 100 + (al.suppressed || []).length;
+    }
     case 'flags': {
       var score = 0;
       if (p.text === 0) score += 100;
@@ -381,7 +463,12 @@ function getSortValue(p, col) {
 }
 
 function render() {
-  var done = Object.values(donePages);
+  var allDone = Object.values(donePages);
+  var allRendering = Object.values(renderingPages);
+
+  buildBrandTabs(allDone, allRendering);
+
+  var done = filterByBrand(allDone);
   done.sort(function(a, b) {
     // Filter match goes to top
     if (activeFilter) {
@@ -394,7 +481,7 @@ function render() {
     return (va - vb) * sortDir;
   });
 
-  var rendering = Object.values(renderingPages);
+  var rendering = filterByBrand(allRendering);
   rendering.sort(function(a, b) { return (a.text || 0) - (b.text || 0); });
 
   buildTable(done, 'doneTable', false);
@@ -412,6 +499,7 @@ function render() {
     document.getElementById('renderingSection').style.display = 'none';
   }
 
+  document.getElementById('doneLabel').textContent = '(' + done.length + (activeBrand ? '/' + allDone.length : '') + ' pages)';
 }
 
 function addLog(msg, cls) {
