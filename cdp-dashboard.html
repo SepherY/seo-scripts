@@ -117,7 +117,6 @@ const COLS = [
   { key: 'robots', label: 'Robots' },
   { key: 'canonical', label: 'Canon.', cls: 'canon-cell' },
   { key: 'footer', label: 'Footer' },
-  { key: 'api', label: 'API' },
   { key: 'iframes', label: 'Iframes', cls: 'domains' },
   { key: 'links', label: 'Links', cls: 'text-num' },
   { key: 'images', label: 'Imgs', cls: 'text-num' },
@@ -263,8 +262,7 @@ function cellHtml(p, col, isRendering) {
       const short = p.canonical.replace('https://', '').substring(0, 25);
       return self ? '<span class="tag tag-ok" title="' + p.canonical + '">self</span>' : '<span class="tag tag-warn" title="' + p.canonical + '">' + short + '</span>';
     }
-    case 'footer': return p.footer ? '<span class="tag tag-ok">Y</span>' : '<span class="tag tag-warn">N</span>';
-    case 'api': return p.articleApi ? '<span class="tag tag-ok">yes(' + p.articleCount + ')</span>' : '<span class="tag tag-info">no</span>';
+    case 'footer': return p.articleApi ? '<span class="tag tag-ok">Y</span>' : '<span class="tag tag-warn">N</span>';
     case 'iframes': return (p.iframeDomains || []).map(function(d) { return '<span class="tag tag-domain">' + d + '</span>'; }).join('') || '-';
     case 'links': return (p.internalLinks || 0) + '/<span style="color:#666">' + (p.externalLinks || 0) + '</span>';
     case 'images': return '' + (p.imgCount || 0);
@@ -293,7 +291,7 @@ function cellHtml(p, col, isRendering) {
       if (isRendering) f.push('RENDERING');
       if (p.text === 0) f.push('EMPTY');
       else if (p.text < 400) f.push('THIN');
-      if (!p.footer) f.push('NO-FTR');
+      if (!p.articleApi) f.push('NO-FTR');
       if (p.consoleErrors > 0) f.push('ERR');
       if (p.robotsMeta && p.robotsMeta.toLowerCase().includes('noindex')) f.push('NOINDEX');
       if (p.isRedirected) f.push('REDIR');
@@ -433,8 +431,7 @@ function getSortValue(p, col) {
     case 'text': return p.text || 0;
     case 'robots': return p.robotsMeta || '';
     case 'canonical': return p.canonical === p.url ? 0 : 1;
-    case 'footer': return p.footer ? 1 : 0;
-    case 'api': return p.articleApi ? 1 : 0;
+    case 'footer': return p.articleApi ? 1 : 0;
     case 'iframes': return (p.iframeDomains || []).length;
     case 'links': return (p.internalLinks || 0);
     case 'images': return p.imgCount || 0;
@@ -543,7 +540,7 @@ function getFlags(p) {
   var f = [];
   if (p.text === 0) f.push('EMPTY');
   else if (p.text < 400) f.push('THIN');
-  if (!p.footer) f.push('NO-FTR');
+  if (!p.articleApi) f.push('NO-FTR');
   if (p.consoleErrors > 0) f.push('ERR');
   if (p.robotsMeta && p.robotsMeta.toLowerCase().includes('noindex')) f.push('NOINDEX');
   if (p.isRedirected) f.push('REDIR');
